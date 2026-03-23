@@ -1,5 +1,11 @@
 # AI-Assisted AR Medical Image Exploration using Multimodal Models
 
+## Prototype Screenshot
+
+The screenshot below shows the current prototype concept: a chatbot-style interface where a CT abdomen image is loaded and the multimodal model returns similarity scores for prompted medical classes.
+
+![ARMedVLM chatbot-style prototype screenshot](image.png)
+
 ## Project Goal
 
 This project aims to develop an augmented reality system for interactive exploration of volumetric medical images such as CT scans. The system will allow a user to load a medical volume, visualize it in 3D, manipulate it through slicing and viewpoint controls, and query an integrated multimodal model to obtain semantic information from selected slices or regions of interest. The core objective is to combine spatial visualization and AI-based interpretation in a single workflow rather than treating them as separate tools.
