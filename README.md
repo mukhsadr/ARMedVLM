@@ -22,6 +22,10 @@ The current prototype code is stored in:
 - `native_vtk_prototype/app`
 - `native_vtk_prototype/scripts`
 
+Prototype screenshot showing the native 3D viewer, webcam gesture control, and chatbot response:
+
+![Native VTK prototype with hand-controlled 3D object and chatbot response](ar llma chatbot and 3d object roate and cam manupulation.png)
+
 The main prototype capabilities are:
 
 - cleaned 3D CT rendering with reduced table/background artifacts
