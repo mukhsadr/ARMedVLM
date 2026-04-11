@@ -1,10 +1,10 @@
 # AI-Assisted AR Medical Image Exploration using Multimodal Models
 
-## Prototype Screenshot
+## Latest Prototype Screenshot
 
-The screenshot below shows the current prototype concept: a chatbot-style interface where a CT abdomen image is loaded and the multimodal model returns similarity scores for prompted medical classes.
+The screenshot below shows the latest native prototype: a cleaned 3D medical object view with webcam-based hand interaction and grounded chatbot response.
 
-![ARMedVLM chatbot-style prototype screenshot](image.png)
+![Native VTK prototype with hand-controlled 3D object and chatbot response](ar llma chatbot and 3d object roate and cam manupulation.png)
 
 ## Current MVD
 
@@ -22,9 +22,9 @@ The current prototype code is stored in:
 - `native_vtk_prototype/app`
 - `native_vtk_prototype/scripts`
 
-Prototype screenshot showing the native 3D viewer, webcam gesture control, and chatbot response:
+Earlier screenshot from the initial chatbot-style concept:
 
-![Native VTK prototype with hand-controlled 3D object and chatbot response](ar llma chatbot and 3d object roate and cam manupulation.png)
+![ARMedVLM chatbot-style prototype screenshot](image.png)
 
 The main prototype capabilities are:
 
