@@ -4,7 +4,7 @@
 
 The screenshot below shows the latest native prototype: a cleaned 3D medical object view with webcam-based hand interaction and grounded chatbot response.
 
-![Native VTK prototype with hand-controlled 3D object and chatbot response](ar llma chatbot and 3d object roate and cam manupulation.png)
+![Native VTK prototype with hand-controlled 3D object and chatbot response](native_vtk_dashboard.png)
 
 ## Current MVD
 
