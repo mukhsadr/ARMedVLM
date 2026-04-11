@@ -6,6 +6,53 @@ The screenshot below shows the current prototype concept: a chatbot-style interf
 
 ![ARMedVLM chatbot-style prototype screenshot](image.png)
 
+## Current MVD
+
+The current minimum viable design has moved from the earlier browser-first prototype to a native Python prototype built around `SimpleITK`, `VTK`, and `PyVista`. The current working path is:
+
+- CT preprocessing to remove table/background and crop to the body
+- optional spleen mask loading and spleen-only extraction
+- rigid registration of longitudinal scans into a fixed reference (`CT4`)
+- a native 3D viewer for bone-context rendering with spleen overlay
+- a native dashboard with webcam-based hand gesture zones and an Ollama-backed text assistant
+- a longitudinal timeline viewer that plays registered scans over time
+
+The current prototype code is stored in:
+
+- `native_vtk_prototype/app`
+- `native_vtk_prototype/scripts`
+
+The main prototype capabilities are:
+
+- cleaned 3D CT rendering with reduced table/background artifacts
+- spleen overlay and spleen-only object preparation
+- CT-to-CT rigid registration for longitudinal comparison
+- playback of registered series (`CT1`, `CT3`, `CT4`)
+- simple gesture-driven navigation and zoom control
+- grounded LLM responses from spleen mask-derived metrics
+
+The current processing flow is:
+
+```text
+Raw CT -> body cleanup -> spleen mask alignment -> rigid registration to CT4 -> 3D viewer / timeline / dashboard
+```
+
+Typical local run order for the prototype is:
+
+```powershell
+cd C:\Users\adams\Documents\Projects\ARMedVLMProposal\native_vtk_prototype
+.\scripts\run_preprocess_all.ps1
+.\scripts\run_register_all.ps1
+.\scripts\run_timeline.ps1
+```
+
+For the interactive native dashboard:
+
+```powershell
+cd C:\Users\adams\Documents\Projects\ARMedVLMProposal\native_vtk_prototype
+.\scripts\run_native_dashboard.ps1
+```
+
 ## Project Goal
 
 This project aims to develop an augmented reality system for interactive exploration of volumetric medical images such as CT scans. The system will allow a user to load a medical volume, visualize it in 3D, manipulate it through slicing and viewpoint controls, and query an integrated multimodal model to obtain semantic information from selected slices or regions of interest. The core objective is to combine spatial visualization and AI-based interpretation in a single workflow rather than treating them as separate tools.

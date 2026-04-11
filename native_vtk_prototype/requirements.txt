@@ -1,0 +1,10 @@
+numpy
+SimpleITK
+pyvista
+pyvistaqt
+PySide6
+vtk
+mediapipe==0.10.14
+opencv-python
+requests
+cvzone
