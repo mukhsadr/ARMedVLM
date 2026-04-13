@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import collections
+import re
 import threading
 import time
 from pathlib import Path
@@ -215,8 +216,9 @@ class AskWorker(QtCore.QObject):
     def run(self) -> None:
         context_lines = [
             f"Current case: {self.context.get('case_label', 'unknown')}",
-            f"CT path: {self.context.get('ct_path', 'unknown')}",
-            f"Mask path: {self.context.get('mask_path', 'none') or 'none'}",
+            f"Case role: {self.context.get('case_role', 'unknown')}",
+            f"Mask availability: {self.context.get('mask_status', 'unknown')}",
+            f"Software stack: {self.context.get('stack', 'SimpleITK preprocessing and registration, PyVista/VTK rendering, Ollama chat')}",
             f"Preprocessing: {self.context.get('preprocess', 'body mask cleanup, outside-body removal, cropping')}",
             f"Registration: {self.context.get('registration', 'none')}",
             f"Available timeline cases: {self.context.get('timeline', 'unknown')}",
@@ -233,6 +235,9 @@ class AskWorker(QtCore.QObject):
             "You are a medical imaging assistant for a spleen CT dashboard. "
             "Use only the provided preprocessing, registration, case, and mask information. "
             "Do not diagnose. Keep the answer concise and practical. "
+            "Write in chatbot-style prose, not bullet points, numbered lists, or JSON. "
+            "Start with spleen volume if available. Then say whether the measured spleen volume looks within a typical adult range or enlarged-looking based only on the provided volume, not a diagnosis. "
+            "Then mention the preprocessing and registration context briefly. "
             "If something is unavailable, say so plainly.\n\n"
             + "\n".join(context_lines)
             + "\n"
@@ -362,9 +367,10 @@ class MainWindow(QtWidgets.QMainWindow):
             registration = f"{current_label} rigidly registered to CT4 cleaned space"
         self.llm_context = {
             "case_label": current_label,
-            "ct_path": self.ct_path,
-            "mask_path": self.mask_path or "none",
-            "preprocess": "body thresholding, connected-component cleanup, hole filling, outside-body removal, cropped cleaned CT",
+            "case_role": "fixed reference" if current_label == "CT4" else "moving case aligned to fixed CT4 reference",
+            "mask_status": "spleen mask available" if self.mask_path else "no spleen mask available",
+            "stack": "SimpleITK preprocessing and rigid registration, connected-component body cleanup, PyVista/VTK 3D rendering, Ollama language model",
+            "preprocess": "SimpleITK body thresholding at soft-tissue range, connected-component cleanup, 2D hole filling, morphological opening and closing, outside-body removal to air, cropped cleaned CT, optional spleen-only CT and cropped spleen mask",
             "registration": registration,
             "timeline": " -> ".join(self.series_labels) if self.series_labels else current_label,
         }
@@ -406,28 +412,28 @@ class MainWindow(QtWidgets.QMainWindow):
         self.chat_card = QtWidgets.QFrame()
         self.chat_card.setObjectName("glass")
         self.chat_card.setMinimumHeight(260)
+        self.chat_card.setSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Expanding)
         chat_layout = QtWidgets.QVBoxLayout(self.chat_card)
         chat_layout.setContentsMargins(16, 14, 16, 16)
         chat_layout.setSpacing(10)
         chat_title = QtWidgets.QLabel("Ask Llama")
+        row = QtWidgets.QHBoxLayout()
+        row.setContentsMargins(0, 8, 0, 4)
+        row.setSpacing(10)
+        self.chat_input = QtWidgets.QLineEdit("Summarize preprocessing, registration, and the spleen findings.")
+        self.ask_button = QtWidgets.QPushButton("Ask Llama")
+        self.ask_button.clicked.connect(self._ask_llama)
+        row.addWidget(self.chat_input, 1)
+        row.addWidget(self.ask_button)
         self.chat_output = QtWidgets.QPlainTextEdit()
         self.chat_output.setReadOnly(True)
         self.chat_output.setPlainText("Ask about preprocessing, registration, CT changes, and spleen mask metrics.")
         self.chat_output.setMinimumHeight(180)
         self.chat_output.setViewportMargins(0, 0, 0, 6)
-        row = QtWidgets.QHBoxLayout()
-        row.setContentsMargins(0, 6, 0, 0)
-        row.setSpacing(10)
-        self.chat_input = QtWidgets.QLineEdit("Summarize this CT and the spleen findings.")
-        self.ask_button = QtWidgets.QPushButton("Ask Llama")
-        self.ask_button.clicked.connect(self._ask_llama)
-        row.addWidget(self.chat_input, 1)
-        row.addWidget(self.ask_button)
         chat_layout.addWidget(chat_title)
-        chat_layout.addWidget(self.chat_output, 1)
         chat_layout.addLayout(row)
+        chat_layout.addWidget(self.chat_output, 1)
         left.addWidget(self.chat_card, 1)
-        left.addStretch(1)
 
         self.viewer_card = QtWidgets.QFrame()
         self.viewer_card.setObjectName("glass")
@@ -870,7 +876,13 @@ class MainWindow(QtWidgets.QMainWindow):
     @QtCore.Slot(str)
     def _finish_llama(self, text: str) -> None:
         self.ask_button.setEnabled(True)
-        self.chat_output.setPlainText(text)
+        self.chat_output.setPlainText(self._format_chat_text(text))
+
+    def _format_chat_text(self, text: str) -> str:
+        cleaned = text.strip()
+        cleaned = re.sub(r"^\s*[-*•]+\s*", "", cleaned, flags=re.MULTILINE)
+        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+        return cleaned
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:
         if self.capture is not None:
