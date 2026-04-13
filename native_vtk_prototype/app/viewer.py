@@ -96,7 +96,7 @@ def main() -> None:
     plotter = pv.Plotter(window_size=(1400, 900))
     plotter.background_color = (0.04, 0.06, 0.08)
 
-    state = {"preset": "soft", "show_mask": mask_mesh is not None, "object_mode": False}
+    state = {"preset": "bone", "show_mask": mask_mesh is not None, "object_mode": False}
 
     def redraw() -> None:
         source_grid = ct_grid

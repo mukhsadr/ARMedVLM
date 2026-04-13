@@ -83,7 +83,7 @@ def spleen_metrics(ct_arr: np.ndarray, mask_arr: np.ndarray | None, spacing: tup
     }
 
 
-def classify_hand(landmarks: list) -> tuple[str, int, str, str]:
+def classify_hand(landmarks: list) -> tuple[str, int, str, str, str]:
     finger_count = 0
     tip_pip = [(8, 6), (12, 10), (16, 14), (20, 18)]
     for tip, pip in tip_pip:
@@ -116,10 +116,11 @@ def classify_hand(landmarks: list) -> tuple[str, int, str, str]:
         pose = "fist"
     elif finger_count == 2:
         pose = "v_sign"
-    return pose, finger_count, zone_x, zone_y
+    handedness = "unknown"
+    return pose, finger_count, zone_x, zone_y, handedness
 
 
-def classify_cvzone_hand(hand: dict, detector: HandDetector, frame_shape: tuple[int, int, int]) -> tuple[str, int, str, str]:
+def classify_cvzone_hand(hand: dict, detector: HandDetector, frame_shape: tuple[int, int, int]) -> tuple[str, int, str, str, str]:
     fingers = detector.fingersUp(hand)
     finger_count = int(sum(fingers))
     cx, cy = hand["center"]
@@ -146,7 +147,8 @@ def classify_cvzone_hand(hand: dict, detector: HandDetector, frame_shape: tuple[
         pose = "fist"
     elif finger_count == 2:
         pose = "v_sign"
-    return pose, finger_count, zone_x, zone_y
+    handedness = str(hand.get("type", "unknown")).lower()
+    return pose, finger_count, zone_x, zone_y, handedness
 
 
 def draw_dashed_line(frame: np.ndarray, pt1: tuple[int, int], pt2: tuple[int, int], color: tuple[int, int, int], thickness: int = 1, dash: int = 10) -> None:
@@ -169,28 +171,31 @@ def draw_control_grid(frame: np.ndarray, pose: str, zone_x: str, zone_y: str, ac
     h, w = frame.shape[:2]
     x1 = w // 3
     x2 = (2 * w) // 3
-    y1 = int(h * 0.24)
-    y2 = int(h * 0.80)
+    y1 = int(h * 0.18)
+    y2 = int(h * 0.82)
     green = (90, 255, 140)
 
     labels = [
-        ((w // 6) - 24, y1 - 18, "PREV"),
-        (((5 * w) // 6) - 22, y1 - 18, "NEXT"),
-        ((w // 2) - 56, (y1 + y2) // 2, "OPEN PALM:+  FIST:-"),
-        ((w // 6) - 46, h - 24, "ROTATE LEFT"),
-        (((5 * w) // 6) - 52, h - 24, "ROTATE RIGHT"),
+        ((w // 6) - 34, (y1 + y2) // 2 - 10, "PALM"),
+        ((w // 6) - 38, (y1 + y2) // 2 + 14, "SPIN LEFT"),
+        ((w // 2) - 54, (y1 + y2) // 2 - 10, "PALM ZOOM+"),
+        ((w // 2) - 46, (y1 + y2) // 2 + 14, "FIST ZOOM-"),
+        (((5 * w) // 6) - 34, (y1 + y2) // 2 - 10, "PALM"),
+        (((5 * w) // 6) - 42, (y1 + y2) // 2 + 14, "SPIN RIGHT"),
     ]
     for x, y, text in labels:
         cv2.putText(frame, text, (x, y), cv2.FONT_HERSHEY_SIMPLEX, 0.46, green, 1, cv2.LINE_AA)
 
-    active_boxes = []
-    active_boxes.append(((0, 0), (x1, y1)))               # top-left prev
-    active_boxes.append(((x2, 0), (w, y1)))               # top-right next
-    active_boxes.append(((x1, y1), (x2, y2)))             # center zoom
-    active_boxes.append(((0, y2), (x1, h)))               # bottom-left rotate
-    active_boxes.append(((x2, y2), (w, h)))               # bottom-right rotate
-    for (ax1, ay1), (ax2, ay2) in active_boxes:
-        cv2.rectangle(frame, (ax1 + 2, ay1 + 2), (ax2 - 2, ay2 - 2), green, 1, cv2.LINE_AA)
+    boxes = {
+        "spin_left": ((0, y1), (x1, y2)),
+        "zoom_in": ((x1, y1), (x2, y2)),
+        "zoom_out": ((x1, y1), (x2, y2)),
+        "spin_right": ((x2, y1), (w, y2)),
+    }
+    for key, ((ax1, ay1), (ax2, ay2)) in boxes.items():
+        color = (120, 255, 170) if action == key else green
+        thickness = 2 if action == key else 1
+        cv2.rectangle(frame, (ax1 + 2, ay1 + 2), (ax2 - 2, ay2 - 2), color, thickness, cv2.LINE_AA)
 
     status = f"pose={pose} zone={zone_x}/{zone_y} action={action}"
     cv2.rectangle(frame, (12, 12), (420, 42), (10, 20, 25), -1)
@@ -200,22 +205,39 @@ def draw_control_grid(frame: np.ndarray, pose: str, zone_x: str, zone_y: str, ac
 class AskWorker(QtCore.QObject):
     finished = QtCore.Signal(str)
 
-    def __init__(self, metrics: dict | None, question: str):
+    def __init__(self, metrics: dict | None, question: str, context: dict | None = None):
         super().__init__()
         self.metrics = metrics
         self.question = question
+        self.context = context or {}
 
     @QtCore.Slot()
     def run(self) -> None:
-        if not self.metrics:
-            self.finished.emit("No spleen mask metrics available for this case.")
-            return
+        context_lines = [
+            f"Current case: {self.context.get('case_label', 'unknown')}",
+            f"CT path: {self.context.get('ct_path', 'unknown')}",
+            f"Mask path: {self.context.get('mask_path', 'none') or 'none'}",
+            f"Preprocessing: {self.context.get('preprocess', 'body mask cleanup, outside-body removal, cropping')}",
+            f"Registration: {self.context.get('registration', 'none')}",
+            f"Available timeline cases: {self.context.get('timeline', 'unknown')}",
+        ]
+        metrics_line = "Metrics: mask not available."
+        if self.metrics:
+            metrics_line = (
+                f"Metrics: volume_ml={self.metrics['volume_ml']:.1f}, "
+                f"mean_hu={self.metrics['mean_hu']:.1f}, "
+                f"std_hu={self.metrics['std_hu']:.1f}, "
+                f"voxels={self.metrics['voxels']}."
+            )
         prompt = (
-            "You are a medical imaging assistant. Use only the provided metrics. "
-            "Do not diagnose. Reply in plain English in 3-5 short lines.\n\n"
-            f"Metrics: volume_ml={self.metrics['volume_ml']:.1f}, mean_hu={self.metrics['mean_hu']:.1f}, "
-            f"std_hu={self.metrics['std_hu']:.1f}, voxels={self.metrics['voxels']}.\n"
-            f"Question: {self.question}"
+            "You are a medical imaging assistant for a spleen CT dashboard. "
+            "Use only the provided preprocessing, registration, case, and mask information. "
+            "Do not diagnose. Keep the answer concise and practical. "
+            "If something is unavailable, say so plainly.\n\n"
+            + "\n".join(context_lines)
+            + "\n"
+            + metrics_line
+            + f"\nQuestion: {self.question}"
         )
         try:
             res = requests.post(
@@ -227,14 +249,23 @@ class AskWorker(QtCore.QObject):
             text = res.json().get("response", "").strip()
             self.finished.emit(text or "No response from Ollama.")
         except Exception:
-            self.finished.emit(
-                f"Spleen mask is available. Estimated spleen volume is {self.metrics['volume_ml']:.1f} mL. "
-                f"Mean HU is {self.metrics['mean_hu']:.1f}."
-            )
+            if self.metrics:
+                self.finished.emit(
+                    f"Case {self.context.get('case_label', 'unknown')}. "
+                    f"Registration: {self.context.get('registration', 'none')}. "
+                    f"Spleen mask available. Volume {self.metrics['volume_ml']:.1f} mL. "
+                    f"Mean HU {self.metrics['mean_hu']:.1f}."
+                )
+            else:
+                self.finished.emit(
+                    f"Case {self.context.get('case_label', 'unknown')}. "
+                    f"Registration: {self.context.get('registration', 'none')}. "
+                    "No spleen mask metrics available for this case."
+                )
 
 
 class MainWindow(QtWidgets.QMainWindow):
-    gesture_signal = QtCore.Signal(str, int, str, str)
+    gesture_signal = QtCore.Signal(str, int, str, str, str)
 
     def __init__(self, ct_path: str, mask_path: str = ""):
         super().__init__()
@@ -253,6 +284,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.mask_arr = None
         self.mask_mesh = None
         self.metrics = None
+        self.llm_context: dict[str, str] = {}
         self.hand_tracking_available = CVZONE_DETECTOR is not None or MP_HANDS is not None
         self.object_center = (0.0, 0.0, 0.0)
 
@@ -266,19 +298,21 @@ class MainWindow(QtWidgets.QMainWindow):
         self.volume_actor = None
         self.mask_actor = None
         self.object_yaw = 0.0
+        self.auto_spin_active = False
         self.pose_history = collections.deque()
-        self.pose_window_seconds = 0.55
-        self.required_majority = 0.65
-        self.min_emit_interval = 0.38
+        self.pose_window_seconds = 0.16
+        self.required_majority = 0.52
+        self.min_emit_interval = 0.06
         self.last_action_signature = "none"
         self.spin_timer = QtCore.QTimer(self)
         self.spin_timer.timeout.connect(self._spin_tick)
         self.spin_direction = 0
         self.spin_step_index = 0
-        self.spin_total_steps = 18
-        self.spin_total_degrees = 36.0
+        self.spin_total_steps = 999999
+        self.spin_total_degrees = 5.0
+        self.active_hold_action = "none"
         self.play_timer = QtCore.QTimer(self)
-        self.play_timer.timeout.connect(self._next_frame)
+        self.play_timer.timeout.connect(self._spin_tick)
 
         self._build_ui()
         self._style_ui()
@@ -320,26 +354,44 @@ class MainWindow(QtWidgets.QMainWindow):
         self.mask_arr = sitk.GetArrayFromImage(self.mask_img).astype(np.uint8) if self.mask_img else None
         self.mask_mesh = build_spleen_mesh(self.mask_img) if self.mask_img else None
         self.metrics = spleen_metrics(self.ct_arr, self.mask_arr, self.ct_img.GetSpacing())
+        self.show_mask = self.mask_mesh is not None
         self.object_center = tuple(float(v) for v in (self.mask_mesh.center if self.mask_mesh is not None else self.ct_grid.center))
+        current_label = self.series_labels[self.series_index] if self.series_labels else Path(self.ct_path).stem
+        registration = "Fixed reference CT4 cleaned space"
+        if current_label != "CT4":
+            registration = f"{current_label} rigidly registered to CT4 cleaned space"
+        self.llm_context = {
+            "case_label": current_label,
+            "ct_path": self.ct_path,
+            "mask_path": self.mask_path or "none",
+            "preprocess": "body thresholding, connected-component cleanup, hole filling, outside-body removal, cropped cleaned CT",
+            "registration": registration,
+            "timeline": " -> ".join(self.series_labels) if self.series_labels else current_label,
+        }
 
     def _build_ui(self) -> None:
         central = QtWidgets.QWidget()
         self.setCentralWidget(central)
-
         root = QtWidgets.QHBoxLayout(central)
-        root.setContentsMargins(14, 14, 14, 14)
-        root.setSpacing(14)
+        root.setContentsMargins(18, 18, 18, 18)
+        root.setSpacing(18)
 
+        self.left_panel = QtWidgets.QWidget()
+        self.left_panel.setFixedWidth(360)
         left = QtWidgets.QVBoxLayout()
+        left.setContentsMargins(0, 0, 0, 0)
         left.setSpacing(12)
-        root.addLayout(left, 0)
+        self.left_panel.setLayout(left)
+        root.addWidget(self.left_panel, 0)
 
         self.camera_card = QtWidgets.QFrame()
         self.camera_card.setObjectName("glass")
+        self.camera_card.setFixedHeight(340)
         cam_layout = QtWidgets.QVBoxLayout(self.camera_card)
+        cam_layout.setContentsMargins(14, 12, 14, 12)
         self.camera_title = QtWidgets.QLabel("MediaPipe Camera")
         self.camera_label = QtWidgets.QLabel()
-        self.camera_label.setFixedSize(460, 320)
+        self.camera_label.setFixedHeight(210)
         self.camera_label.setAlignment(QtCore.Qt.AlignCenter)
         self.status_label = QtWidgets.QLabel("Status: starting...")
         self.gesture_label = QtWidgets.QLabel("Gesture: none")
@@ -353,12 +405,19 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.chat_card = QtWidgets.QFrame()
         self.chat_card.setObjectName("glass")
+        self.chat_card.setMinimumHeight(260)
         chat_layout = QtWidgets.QVBoxLayout(self.chat_card)
+        chat_layout.setContentsMargins(16, 14, 16, 16)
+        chat_layout.setSpacing(10)
         chat_title = QtWidgets.QLabel("Ask Llama")
         self.chat_output = QtWidgets.QPlainTextEdit()
         self.chat_output.setReadOnly(True)
-        self.chat_output.setPlainText("Ask about the CT and spleen mask metrics.")
+        self.chat_output.setPlainText("Ask about preprocessing, registration, CT changes, and spleen mask metrics.")
+        self.chat_output.setMinimumHeight(180)
+        self.chat_output.setViewportMargins(0, 0, 0, 6)
         row = QtWidgets.QHBoxLayout()
+        row.setContentsMargins(0, 6, 0, 0)
+        row.setSpacing(10)
         self.chat_input = QtWidgets.QLineEdit("Summarize this CT and the spleen findings.")
         self.ask_button = QtWidgets.QPushButton("Ask Llama")
         self.ask_button.clicked.connect(self._ask_llama)
@@ -368,13 +427,17 @@ class MainWindow(QtWidgets.QMainWindow):
         chat_layout.addWidget(self.chat_output, 1)
         chat_layout.addLayout(row)
         left.addWidget(self.chat_card, 1)
+        left.addStretch(1)
 
         self.viewer_card = QtWidgets.QFrame()
         self.viewer_card.setObjectName("glass")
         self.viewer_card.setProperty("viewerCard", True)
+        self.viewer_card.setMinimumWidth(980)
         viewer_layout = QtWidgets.QVBoxLayout(self.viewer_card)
-        viewer_layout.setContentsMargins(10, 10, 10, 10)
+        viewer_layout.setContentsMargins(14, 12, 14, 14)
+        viewer_layout.setSpacing(10)
         toolbar = QtWidgets.QHBoxLayout()
+        toolbar.setSpacing(8)
         self.soft_btn = QtWidgets.QPushButton("Soft Tissue")
         self.bone_btn = QtWidgets.QPushButton("Bone")
         self.mask_btn = QtWidgets.QPushButton("Toggle Spleen")
@@ -395,37 +458,88 @@ class MainWindow(QtWidgets.QMainWindow):
         viewer_layout.addLayout(toolbar)
 
         self.plotter = QtInteractor(self.viewer_card)
+        self.plotter.setAttribute(QtCore.Qt.WA_TranslucentBackground, True)
+        self.plotter.setAttribute(QtCore.Qt.WA_NoSystemBackground, True)
         self.plotter.interactor.setStyleSheet("background: transparent; border: 0;")
+        try:
+            self.plotter.render_window.SetAlphaBitPlanes(1)
+            self.plotter.renderer.SetUseFXAA(False)
+            self.plotter.renderer.SetBackgroundAlpha(0.0)
+        except Exception:
+            pass
         viewer_layout.addWidget(self.plotter.interactor, 1)
         root.addWidget(self.viewer_card, 1)
+        self._apply_glass_effects()
+
+    def _apply_glass_effects(self) -> None:
+        for widget in (self.camera_card, self.chat_card, self.viewer_card):
+            shadow = QtWidgets.QGraphicsDropShadowEffect(self)
+            shadow.setBlurRadius(28)
+            shadow.setOffset(0, 10)
+            shadow.setColor(QtGui.QColor(0, 0, 0, 95))
+            widget.setGraphicsEffect(shadow)
 
     def _style_ui(self) -> None:
         self.setStyleSheet("""
             QMainWindow, QWidget { background: #0f1720; color: #eef3f7; font-family: Segoe UI; }
             QFrame#glass {
-                background: rgba(8, 19, 30, 122);
-                border: 1px solid rgba(255,255,255,28);
+                background: qlineargradient(
+                    x1:0, y1:0, x2:1, y2:1,
+                    stop:0 rgba(255,255,255,34),
+                    stop:0.12 rgba(30,48,66,168),
+                    stop:1 rgba(10,18,28,152)
+                );
+                border: 1px solid rgba(255,255,255,40);
                 border-radius: 16px;
             }
             QFrame#glass[viewerCard="true"] {
-                background: rgba(8, 19, 30, 92);
-                border: 1px solid rgba(255,255,255,18);
+                background: qlineargradient(
+                    x1:0, y1:0, x2:1, y2:1,
+                    stop:0 rgba(255,255,255,22),
+                    stop:0.16 rgba(28,42,58,112),
+                    stop:1 rgba(10,18,28,92)
+                );
+                border: 1px solid rgba(255,255,255,26);
             }
             QLabel { font-size: 13px; }
+            QLabel[role="title"] {
+                font-size: 14px;
+                font-weight: 700;
+                color: #dff8fb;
+                letter-spacing: 0.3px;
+            }
             QPushButton {
-                background: rgba(92, 225, 230, 22);
-                border: 1px solid rgba(92, 225, 230, 80);
+                background: qlineargradient(
+                    x1:0, y1:0, x2:1, y2:1,
+                    stop:0 rgba(255,255,255,26),
+                    stop:1 rgba(92,225,230,38)
+                );
+                border: 1px solid rgba(92, 225, 230, 90);
                 border-radius: 10px;
-                padding: 8px 12px;
+                padding: 9px 12px;
+                min-height: 18px;
             }
             QPushButton:hover { background: rgba(92, 225, 230, 55); }
             QLineEdit, QPlainTextEdit {
-                background: rgba(0,0,0,38);
-                border: 1px solid rgba(255,255,255,28);
+                background: qlineargradient(
+                    x1:0, y1:0, x2:1, y2:1,
+                    stop:0 rgba(255,255,255,14),
+                    stop:1 rgba(0,0,0,64)
+                );
+                border: 1px solid rgba(255,255,255,34);
                 border-radius: 10px;
-                padding: 8px;
+                padding: 10px 12px;
+            }
+            QPlainTextEdit {
+                margin-bottom: 8px;
+            }
+            QLineEdit {
+                min-height: 22px;
             }
         """)
+        for label in (self.camera_title,):
+            label.setProperty("role", "title")
+        self.left_panel.setStyleSheet("background: transparent;")
 
     def _add_volume(self) -> None:
         cmap = "bone" if self.current_preset == "bone" else "copper"
@@ -467,15 +581,14 @@ class MainWindow(QtWidgets.QMainWindow):
             f"CT: {self.series_labels[self.series_index] if self.series_labels else Path(self.ct_path).name}",
             f"Preset: {'Bone' if self.current_preset == 'bone' else 'Soft Tissue'}",
             f"Mask: {'on' if self.show_mask and self.mask_mesh is not None else 'off'}",
-            "Top row: prev / play / next | Middle row: left spin / zoom / right spin | Fist center: zoom out",
+            "Camera zones: left palm=spin left | center palm/fist=zoom in/out | right palm=spin right",
         ]
         if not self.hand_tracking_available:
             info.append("Hand tracking unavailable in this mediapipe build; use mouse or toolbar.")
         if self.metrics:
             info.append(f"Spleen volume: {self.metrics['volume_ml']:.1f} mL")
         self.plotter.add_text("\n".join(info), position="upper_left", font_size=10, color="white")
-        # True alpha transparency is not reliable for the VTK Qt canvas on this machine,
-        # so use a lighter background and a more transparent surrounding card instead.
+        # Restore the older solid viewer background so the 3D object reads clearly.
         self.plotter.set_background("#5d666d")
         if reset:
             self.object_yaw = 0.0
@@ -484,6 +597,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.plotter.camera.focal_point = self.object_center
             except Exception:
                 pass
+        self._apply_actor_orientation()
         self.plotter.render()
 
     def _set_preset(self, preset: str) -> None:
@@ -505,19 +619,21 @@ class MainWindow(QtWidgets.QMainWindow):
         self._redraw_volume(reset=True)
 
     def _toggle_playback(self) -> None:
-        if self.play_timer.isActive():
+        if self.auto_spin_active:
+            self.auto_spin_active = False
             self.play_timer.stop()
             self.play_btn.setText("Play")
         else:
-            self.play_timer.start(1800)
+            self.auto_spin_active = True
+            self.play_timer.start(24)
             self.play_btn.setText("Pause")
 
     def _apply_gesture(self, gesture: str) -> None:
         camera = self.plotter.camera
         if gesture == "zoom_in":
-            camera.zoom(1.10)
+            camera.zoom(1.025)
         elif gesture == "zoom_out":
-            camera.zoom(0.92)
+            camera.zoom(0.975)
         elif gesture == "spin_left":
             self._start_spin(-1)
             return
@@ -527,11 +643,7 @@ class MainWindow(QtWidgets.QMainWindow):
         elif gesture == "reset_views":
             self.object_yaw = 0.0
             self.plotter.reset_camera()
-        self.object_yaw = max(-70.0, min(70.0, self.object_yaw))
-        if self.volume_actor is not None:
-            self.volume_actor.orientation = (0.0, self.object_yaw, 0.0)
-        if self.mask_actor is not None:
-            self.mask_actor.orientation = (0.0, self.object_yaw, 0.0)
+        self._apply_actor_orientation()
         try:
             camera.focal_point = self.object_center
         except Exception:
@@ -539,31 +651,44 @@ class MainWindow(QtWidgets.QMainWindow):
         self.plotter.renderer.ResetCameraClippingRange()
         self.plotter.render()
 
+    def _apply_actor_orientation(self) -> None:
+        orientation = (0.0, 0.0, float(self.object_yaw))
+        if self.volume_actor is not None:
+            self.volume_actor.orientation = orientation
+        if self.mask_actor is not None:
+            self.mask_actor.orientation = orientation
+
     def _start_spin(self, direction: int) -> None:
         self.spin_direction = direction
         self.spin_step_index = 0
-        self.spin_timer.start(24)
+        if not self.spin_timer.isActive():
+            self.spin_timer.start(24)
+
+    def _stop_spin(self) -> None:
+        self.spin_timer.stop()
+        self.spin_direction = 0
+        self.spin_step_index = 0
 
     def _spin_tick(self) -> None:
         if self.volume_actor is None:
             self.spin_timer.stop()
             return
+        if not self.auto_spin_active and self.spin_direction == 0:
+            self.spin_timer.stop()
+            return
         self.spin_step_index += 1
-        step = self.spin_total_degrees / self.spin_total_steps
-        self.object_yaw += step * self.spin_direction
-        self.object_yaw = max(-70.0, min(70.0, self.object_yaw))
-        if self.volume_actor is not None:
-            self.volume_actor.orientation = (0.0, self.object_yaw, 0.0)
-        if self.mask_actor is not None:
-            self.mask_actor.orientation = (0.0, self.object_yaw, 0.0)
+        if self.auto_spin_active:
+            self.object_yaw = (self.object_yaw + 2.2) % 360.0
+        else:
+            step = self.spin_total_degrees
+            self.object_yaw = (self.object_yaw + (step * self.spin_direction)) % 360.0
+        self._apply_actor_orientation()
         try:
             self.plotter.camera.focal_point = self.object_center
         except Exception:
             pass
         self.plotter.renderer.ResetCameraClippingRange()
         self.plotter.render()
-        if self.spin_step_index >= self.spin_total_steps:
-            self.spin_timer.stop()
 
     def _stable_pose(self, pose: str) -> tuple[str, bool]:
         now = time.time()
@@ -581,42 +706,57 @@ class MainWindow(QtWidgets.QMainWindow):
         ratio = counts[dominant_pose] / len(self.pose_history)
         return dominant_pose, ratio >= self.required_majority
 
-    @QtCore.Slot(str, int, str, str)
-    def _handle_gesture(self, pose: str, finger_count: int, zone_x: str, zone_y: str) -> None:
-        action = "none"
+    @QtCore.Slot(str, int, str, str, str)
+    def _handle_gesture(self, pose: str, finger_count: int, zone_x: str, zone_y: str, handedness: str) -> None:
         now = time.time()
         stable_pose, stable_enough = self._stable_pose(pose)
-        signature = f"{stable_pose}:{zone_x}:{zone_y}"
-        if now - self.last_action_ts < self.min_emit_interval:
-            self.gesture_label.setText(f"Gesture: {stable_pose} ({finger_count}) zone={zone_x}")
-            return
-        if stable_pose == "open_palm" and stable_enough:
-            if zone_y == "top" and zone_x == "left":
-                self._prev_frame()
-                action = "prev"
-            elif zone_y == "top" and zone_x == "right":
-                self._next_frame()
-                action = "next"
-            elif zone_y == "bottom" and zone_x == "left":
-                action = "spin_left"
-            elif zone_y == "bottom" and zone_x == "right":
-                action = "spin_right"
-            elif zone_y == "middle" and zone_x == "center":
-                action = "zoom_in"
-        elif stable_pose == "fist" and stable_enough:
-            if zone_y == "middle" and zone_x == "center":
-                action = "zoom_out"
-        elif stable_pose == "v_sign" and stable_enough:
-            action = "reset_views"
+        action = "none"
+        signature = f"{stable_pose}:{zone_x}"
+
+        if stable_enough:
+            if stable_pose == "open_palm":
+                if zone_x == "left" and handedness == "left":
+                    action = "spin_left"
+                elif zone_x == "right" and handedness == "right":
+                    action = "spin_right"
+                else:
+                    action = "zoom_in"
+            elif stable_pose == "fist":
+                if zone_x == "center":
+                    action = "zoom_out"
+            elif stable_pose == "v_sign":
+                action = "reset_views"
+
         self.gesture_label.setText(
-            f"Gesture: {stable_pose} ({finger_count}) zone={zone_x} stable={stable_enough} -> {action}"
+            f"Gesture: {stable_pose} ({finger_count}) hand={handedness} zone={zone_x} action={action} stable={stable_enough}"
         )
-        if action != "none" and signature != self.last_action_signature:
-            self.last_action_ts = now
+
+        if action in ("spin_left", "spin_right"):
+            desired = -1 if action == "spin_left" else 1
+            self.active_hold_action = action
+            if self.spin_direction != desired:
+                self._start_spin(desired)
+            return
+
+        if self.active_hold_action.startswith("spin"):
+            self._stop_spin()
+            self.active_hold_action = "none"
+
+        if action == "reset_views":
+            if signature != self.last_action_signature and now - self.last_action_ts >= self.min_emit_interval:
+                self.last_action_ts = now
+                self.last_action_signature = signature
+                self._apply_gesture(action)
+            return
+
+        if action in ("zoom_in", "zoom_out"):
+            if now - self.last_action_ts >= self.min_emit_interval:
+                self.last_action_ts = now
+                self._apply_gesture(action)
             self.last_action_signature = signature
-            self._apply_gesture(action)
-        elif stable_pose in ("none", "other") or not stable_enough:
-            self.last_action_signature = "none"
+            return
+
+        self.last_action_signature = "none"
 
     def _start_camera(self) -> None:
         self.capture = cv2.VideoCapture(0)
@@ -650,36 +790,32 @@ class MainWindow(QtWidgets.QMainWindow):
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         res = self.hands.process(rgb) if self.hands is not None else None
 
-        pose, finger_count, zone_x, zone_y = "none", 0, "center", "middle"
+        pose, finger_count, zone_x, zone_y, handedness = "none", 0, "center", "middle", "unknown"
         preview_action = "none"
         if self.cvzone_detector is not None:
             hands, frame = self.cvzone_detector.findHands(frame, draw=True, flipType=False)
             if hands:
-                pose, finger_count, zone_x, zone_y = classify_cvzone_hand(hands[0], self.cvzone_detector, frame.shape)
-                self.gesture_signal.emit(pose, finger_count, zone_x, zone_y)
+                pose, finger_count, zone_x, zone_y, handedness = classify_cvzone_hand(hands[0], self.cvzone_detector, frame.shape)
+                self.gesture_signal.emit(pose, finger_count, zone_x, zone_y, handedness)
             else:
-                self._stable_pose("none")
+                self.gesture_signal.emit("none", 0, "center", "middle", "unknown")
         elif res is not None and res.multi_hand_landmarks:
             hand = res.multi_hand_landmarks[0]
             MP_DRAWING.draw_landmarks(frame, hand, MP_HANDS.HAND_CONNECTIONS)
-            pose, finger_count, zone_x, zone_y = classify_hand(hand.landmark)
-            self.gesture_signal.emit(pose, finger_count, zone_x, zone_y)
+            pose, finger_count, zone_x, zone_y, handedness = classify_hand(hand.landmark)
+            self.gesture_signal.emit(pose, finger_count, zone_x, zone_y, handedness)
         else:
-            self._stable_pose("none")
+            self.gesture_signal.emit("none", 0, "center", "middle", "unknown")
 
         if pose == "open_palm":
-            if zone_y == "top" and zone_x == "left":
-                preview_action = "prev"
-            elif zone_y == "top" and zone_x == "right":
-                preview_action = "next"
-            elif zone_y == "bottom" and zone_x == "left":
+            if zone_x == "left" and handedness == "left":
                 preview_action = "spin_left"
-            elif zone_y == "bottom" and zone_x == "right":
+            elif zone_x == "right" and handedness == "right":
                 preview_action = "spin_right"
-            elif zone_y == "middle" and zone_x == "center":
+            elif zone_x == "center":
                 preview_action = "zoom_in"
         elif pose == "fist":
-            if zone_y == "middle" and zone_x == "center":
+            if zone_x == "center":
                 preview_action = "zoom_out"
         elif pose == "v_sign":
             preview_action = "reset"
@@ -722,7 +858,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.ask_button.setEnabled(False)
         self.chat_output.setPlainText("Thinking...")
         self.worker_thread = QtCore.QThread(self)
-        self.worker = AskWorker(self.metrics, question)
+        self.worker = AskWorker(self.metrics, question, self.llm_context)
         self.worker.moveToThread(self.worker_thread)
         self.worker_thread.started.connect(self.worker.run)
         self.worker.finished.connect(self._finish_llama)
@@ -742,6 +878,9 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.hands is not None:
             self.hands.close()
         return super().closeEvent(event)
+
+    def resizeEvent(self, event: QtGui.QResizeEvent) -> None:
+        super().resizeEvent(event)
 
 
 
