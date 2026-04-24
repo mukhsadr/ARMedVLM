@@ -1,3 +1,5 @@
+## here is the link for the video: https://vanderbilt.box.com/s/p1slvswmyji1zgjm4c27uofeamyxvgno
+
 # AI-Assisted AR Medical Image Exploration using Multimodal Models
 
 ## Latest Prototype Screenshot
