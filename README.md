@@ -1,4 +1,8 @@
-## here is the link for the video: https://vanderbilt.box.com/s/p1slvswmyji1zgjm4c27uofeamyxvgno
+## here is the link for the video: 
+https://vanderbilt.app.box.com/file/2217083363044?s=e5shuujs43kur3zfuirsnknjq6pn9801
+/n
+
+https://vanderbilt.box.com/s/p1slvswmyji1zgjm4c27uofeamyxvgno
 
 # AI-Assisted AR Medical Image Exploration using Multimodal Models
 
