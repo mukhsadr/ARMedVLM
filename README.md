@@ -2,22 +2,18 @@
 
 # AI-Assisted AR Medical Image Exploration using Multimodal Models
 
-## Latest Prototype Screenshot
+## Latest Prototype Media
 
-The screenshot below shows the latest native prototype: a cleaned 3D medical object view with webcam-based hand interaction and grounded chatbot response.
+The GIF below shows the current mobile AR prototype running on a Samsung Galaxy phone. It demonstrates on-device placement of the anatomy model in a real outdoor scene rather than a desktop-only mockup.
 
-![Native VTK prototype with hand-controlled 3D object and chatbot response](native_vtk_dashboard.png)
+![Samsung Galaxy mobile AR demo showing anatomy placement in a real scene](galxyscreen.gif)
 
-## Current MVD
+## Current Prototype
 
-The current minimum viable design has moved from the earlier browser-first prototype to a native Python prototype built around `SimpleITK`, `VTK`, and `PyVista`. The current working path is:
+The current project combines two practical prototype paths:
 
-- CT preprocessing to remove table/background and crop to the body
-- optional spleen mask loading and spleen-only extraction
-- rigid registration of longitudinal scans into a fixed reference (`CT4`)
-- a native 3D viewer for bone-context rendering with spleen overlay
-- a native dashboard with webcam-based hand gesture zones and an Ollama-backed text assistant
-- a longitudinal timeline viewer that plays registered scans over time
+- a native Python workflow built with `SimpleITK`, `VTK`, and `PyVista` for preprocessing, registration, and 3D visualization
+- a lightweight Unity Android AR workflow built with `AR Foundation` and `ARCore` for on-device placement and interaction
 
 The current prototype code is stored in:
 
@@ -30,12 +26,33 @@ Earlier screenshot from the initial chatbot-style concept:
 
 The main prototype capabilities are:
 
-- cleaned 3D CT rendering with reduced table/background artifacts
-- spleen overlay and spleen-only object preparation
-- CT-to-CT rigid registration for longitudinal comparison
+- cleaned 3D CT rendering with reduced table and background artifacts
+- rigid registration of longitudinal scans into a fixed reference (`CT4`)
 - playback of registered series (`CT1`, `CT3`, `CT4`)
-- simple gesture-driven navigation and zoom control
-- grounded LLM responses from spleen mask-derived metrics
+- mobile AR placement of anatomy content in a real scene
+- simple phone-based rotation and scaling interaction
+
+## Android AR Prototype
+
+The Unity Android branch was used as a practical hardware validation step for phone deployment.
+
+Current Android prototype scope:
+
+- detect horizontal planes with `ARCore`
+- place the active anatomy object onto a real-world surface
+- preserve the existing CT selection flow (`CT1` to `CT4`)
+- preserve the mode flow (`Bone`, `Bone+S`, `Organs`)
+- use one-finger drag for rotation
+- use two-finger pinch for scale
+
+## Hardware Validation
+
+The mobile progression used two practical hardware checkpoints:
+
+- `Galaxy S8`: lightweight sanity-check build for safe mobile startup and incremental validation
+- `Galaxy S20`: ARCore-enabled prototype path for plane detection and real-world anatomy placement
+
+The top GIF reflects the phone-based AR direction directly: it shows the anatomy anchored into a live camera scene on Android hardware.
 
 The current processing flow is:
 
@@ -61,9 +78,7 @@ cd C:\Users\adams\Documents\Projects\ARMedVLMProposal\native_vtk_prototype
 
 ## Project Goal
 
-This project aims to develop an augmented reality system for interactive exploration of volumetric medical images such as CT scans. The system will allow a user to load a medical volume, visualize it in 3D, manipulate it through slicing and viewpoint controls, and query an integrated multimodal model to obtain semantic information from selected slices or regions of interest. The core objective is to combine spatial visualization and AI-based interpretation in a single workflow rather than treating them as separate tools.
-
-This project is interesting because most current AR medical imaging systems emphasize rendering and interaction, while recent multimodal biomedical models focus on offline classification or retrieval. Few systems connect immersive visualization with real-time semantic reasoning. The proposed system explores that gap by combining AR-based medical image viewing with VLM-based interpretation, with the longer-term goal of supporting more intelligent clinical and research interfaces.
+This project explores an augmented reality workflow for volumetric medical images such as CT scans. The goal is to combine 3D visualization, interactive manipulation, and multimodal interpretation in a single workflow instead of treating them as separate tools.
 
 ## Technical Approach
 
@@ -76,11 +91,11 @@ Input data will consist of CT volumes in NIfTI or DICOM format. The preprocessin
 - slice textures for 2D or pseudo-volume interaction inside AR
 - surface meshes generated from thresholding or marching cubes for 3D rendering
 
-This stage will be implemented in Python using medical imaging libraries such as `SimpleITK`, `nibabel`, `MONAI`, or `VTK` as needed.
+This stage is implemented in Python using libraries such as `SimpleITK` and `VTK`.
 
 ### 2. AR Visualization
 
-The visualization environment will be built in `Unity`, using `AR Foundation` as the main cross-platform AR framework. Depending on available hardware, the deployment target will be one of the following:
+The visualization environment is planned around `Unity`, using `AR Foundation` as the main cross-platform AR framework. Depending on available hardware, the deployment target can be:
 
 - iPhone or iPad using `ARKit`
 - Android device using `ARCore`
@@ -95,18 +110,18 @@ The rendering system will support:
 
 ### 3. Interaction Layer
 
-The user will be able to:
+The user can:
 
 - rotate and scale the volume
 - move a slicing plane through the scan
 - select or define a region of interest
 - request semantic interpretation of the currently selected slice or region
 
-Interaction will initially be implemented using standard Unity UI controls and touch or controller input. If time allows, the system may be extended with voice or text query input.
+Interaction is implemented with standard Unity UI controls and touch-first mobile input.
 
 ### 4. AI Inference
 
-The AI component will use a biomedical multimodal model such as `BiomedCLIP` or `MedSigLIP` for image-text alignment. A selected slice or extracted ROI will be passed from the visualization system to a Python inference pipeline, which will compute similarity against candidate medical text prompts or labels. The resulting semantic output will then be returned to the AR application and displayed in the user interface.
+The AI component uses a biomedical multimodal model such as `BiomedCLIP` or `MedSigLIP` for image-text alignment. A selected slice or ROI is passed to a Python inference pipeline, and the resulting semantic output is returned to the interface.
 
 The expected inference path is:
 
@@ -136,15 +151,11 @@ BiomedCLIP / MedSigLIP Inference
 Semantic Output in AR
 ```
 
-## Novelty and Contribution
+## Contribution
 
-This project is a systems integration effort under meaningful technical constraints rather than a new model contribution. The novelty lies in combining immersive medical image visualization with semantic image understanding in a single interactive AR pipeline. Existing AR systems often stop at rendering and basic manipulation, while multimodal medical models are usually evaluated offline in Python notebooks or batch pipelines. This project combines those two areas into one interface.
-
-The main contribution is an interactive prototype that allows a user not only to view medical image data in AR, but also to ask the system for semantic interpretation of the current visual context. In that sense, the project is a new application of biomedical multimodal models within an AR workflow, with emphasis on practical integration, interaction design, and performance tradeoffs.
+This project is a systems integration effort rather than a new model contribution. Its main value is combining medical image visualization and multimodal interpretation inside a single AR-oriented workflow.
 
 ## Evaluation Plan
-
-The project will be evaluated with at least one rigorous technical evaluation and several supporting tests.
 
 ### 1. End-to-End Functional Evaluation
 
@@ -156,7 +167,7 @@ The first criterion is whether the full pipeline works:
 - send the selected image data to the multimodal model
 - display the returned semantic result inside the interface
 
-Success will be defined as reliable end-to-end execution across a small set of test volumes.
+Success means reliable end-to-end execution across a small set of test volumes.
 
 ### 2. Performance Evaluation
 
@@ -178,7 +189,7 @@ To justify the AI component, the project will compare:
 - AR visualization only
 - AR visualization with semantic model output
 
-The evaluation question is whether the model output adds meaningful information during exploration. This will be assessed using a small, carefully designed comparison on representative examples, focusing on whether returned predictions or similarity labels are relevant to the selected anatomy or pathology.
+The evaluation question is whether the model output adds meaningful information during exploration.
 
 ### 4. Stress Testing
 
@@ -188,7 +199,7 @@ The system will also be stress-tested on:
 - noisier scans
 - different scan orientations or preprocessing conditions
 
-This will help define practical operating limits and identify failure modes.
+This helps define practical operating limits and failure modes.
 
 ## Milestones and Contingencies
 
@@ -204,7 +215,7 @@ The minimum viable version of the project will include:
 
 ### Expected Hardest Component
 
-The hardest component is likely to be the integration between Unity and the AI inference pipeline, especially if low-latency interaction is required. A second likely challenge is handling medical image formats and coordinate consistency between preprocessing and the AR scene.
+The hardest component is likely to be the integration between Unity and the AI inference pipeline, especially if low-latency interaction is required.
 
 ### Contingency Plan
 
@@ -214,7 +225,7 @@ If full AR deployment becomes too difficult within the available time, the fallb
 - use preprocessed PNG slices instead of full volumetric data
 - precompute model outputs for a set of slices rather than performing fully live inference
 
-This keeps the project scientifically valid while reducing engineering risk.
+This keeps the project technically valid while reducing engineering risk.
 
 ## Success Criteria
 
